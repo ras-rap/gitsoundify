@@ -2,6 +2,9 @@ import type { CommitStat } from "./types";
 
 export const ROOT_DIR = "(root)";
 
+const HASHES_PER_SLICE = 4;
+const PATHS_PER_SLICE = 8;
+
 export interface Slice {
   index: number;
   commitCount: number;
@@ -13,6 +16,8 @@ export interface Slice {
   dirs: Record<string, number>;
   firstTime: number | null;
   lastTime: number | null;
+  hashes: string[];
+  paths: string[];
 }
 
 export interface BucketOptions {
@@ -52,6 +57,8 @@ export function bucketCommits(commits: CommitStat[], opts: BucketOptions = {}): 
     cumulativeNet: 0,
     authors: [],
     dirs: {},
+    hashes: [],
+    paths: [],
     firstTime: null,
     lastTime: null,
   }));
@@ -66,9 +73,11 @@ export function bucketCommits(commits: CommitStat[], opts: BucketOptions = {}): 
     s.added += c.added;
     s.removed += c.removed;
     authorSets[s.index]!.add(c.author);
+    if (s.hashes.length < HASHES_PER_SLICE) s.hashes.push(c.hash);
     for (const path of c.paths) {
       const d = topDir(path);
       s.dirs[d] = (s.dirs[d] ?? 0) + 1;
+      if (s.paths.length < PATHS_PER_SLICE) s.paths.push(path);
     }
     s.firstTime ??= c.time;
     s.lastTime = c.time;

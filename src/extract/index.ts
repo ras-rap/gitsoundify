@@ -9,6 +9,8 @@ import type { RepoSnapshot } from "./types";
 
 export type { RepoSnapshot, CommitStat, TreeNode } from "./types";
 
+const CLONE_TIMEOUT_MS = 90_000;
+
 export interface ExtractOptions extends HistoryOptions {}
 
 export function resolveSource(input: string): { kind: "local"; path: string } | { kind: "remote"; url: string } {
@@ -24,6 +26,8 @@ export async function cloneBare(url: string): Promise<string> {
   const proc = Bun.spawn(["git", "clone", "--bare", "--quiet", url, dir], {
     stdout: "ignore",
     stderr: "pipe",
+    timeout: CLONE_TIMEOUT_MS,
+    env: { ...process.env, GIT_TERMINAL_PROMPT: "0" },
   });
   const [err, code] = await Promise.all([new Response(proc.stderr).text(), proc.exited]);
   if (code !== 0) throw new Error(`clone failed: ${err.trim()}`);

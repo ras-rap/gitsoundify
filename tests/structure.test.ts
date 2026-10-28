@@ -79,8 +79,8 @@ test("invariants hold for big, tiny, and odd repos", () => {
 test("huge repos stay within the section and length budget", () => {
   const many = snapOf(Array.from({ length: 40 }, (_, i) => ({ path: `d${i}/f${i}.ts`, size: 100 })));
   const s = composeStructure(many);
-  expect(s.sections.length).toBeLessThanOrEqual(11); // 10 sections + coda
-  expect(s.lengthBeats).toBeLessThanOrEqual(160 + 8 + 4 * 10); // budget plus rounding slack plus coda
+  expect(s.sections.length).toBeLessThanOrEqual(11); 
+  expect(s.lengthBeats).toBeLessThanOrEqual(160 + 8 + 4 * 10); 
 });
 
 test("README opens the piece with a motif of lead notes", () => {
@@ -124,8 +124,8 @@ test("MIDI file is well formed: header, 4 tracks, balanced note on/off", () => {
   const u32 = (o: number) => ((b[o]! << 24) | (b[o + 1]! << 16) | (b[o + 2]! << 8) | b[o + 3]!) >>> 0;
 
   expect(str(0, 4)).toBe("MThd");
-  expect((b[8]! << 8) | b[9]!).toBe(1); // format 1
-  expect((b[10]! << 8) | b[11]!).toBe(4); // tempo + 3 instruments
+  expect((b[8]! << 8) | b[9]!).toBe(1);
+  expect((b[10]! << 8) | b[11]!).toBe(4);
   expect((b[12]! << 8) | b[13]!).toBe(480);
 
   let off = 14, tracks = 0, ons = 0, offs = 0;
@@ -135,11 +135,11 @@ test("MIDI file is well formed: header, 4 tracks, balanced note on/off", () => {
     let p = off + 8;
     const end = p + len;
     while (p < end) {
-      while (b[p]! & 0x80) p++; // skip delta vlq
+      while (b[p]! & 0x80) p++;
       p++;
       const status = b[p++]!;
       if (status === 0xff) {
-        p++; // meta type
+        p++;
         let l = 0;
         while (b[p]! & 0x80) l = (l << 7) | (b[p++]! & 0x7f);
         l = (l << 7) | b[p++]!;

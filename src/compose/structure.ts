@@ -97,23 +97,35 @@ export function composeStructure(snap: RepoSnapshot): Score {
 
     const sectionDegree = si === 0 ? 0 : pathToDegree(plan.name, scaleLen, salt);
 
-    notes.push({ track: "drone", time: start, duration: len, midi: degreeToMidi(key, sectionDegree, 2), velocity: 0.5 });
+    notes.push({
+      track: "drone", time: start, duration: len,
+      midi: degreeToMidi(key, sectionDegree, 2), velocity: 0.5,
+      source: { kind: "section", name: plan.name, files: plan.files.length },
+    });
 
     const padRng = rng.fork(`pad:${plan.name}`);
     for (let k = 0; k * 8 < len; k++) {
       const blockLen = Math.min(8, len - k * 8);
       const d = sectionDegree + (k % 2 === 0 ? 0 : padRng.pick([-2, 2, 3]));
-      for (const step of [0, 2, 4]) {
-        notes.push({ track: "pad", time: start + k * 8, duration: blockLen, midi: degreeToMidi(key, d + step, 3), velocity: 0.34 });
+            for (const step of [0, 2, 4]) {
+        notes.push({
+          track: "pad", time: start + k * 8, duration: blockLen,
+          midi: degreeToMidi(key, d + step, 3), velocity: 0.34,
+          source: { kind: "section", name: plan.name, files: plan.files.length },
+        });
       }
     }
 
     let offset = 0;
     if (plan.name === ROOT_SECTION && snap.readme) {
       const words = snap.readme.firstLine.split(/\s+/).filter(Boolean).slice(0, clamp(len - 6, 0, 6));
-      words.forEach((w, i) => {
+            words.forEach((w, i) => {
         const deg = pathToDegree(w.toLowerCase(), scaleLen * 2, salt);
-        notes.push({ track: "lead", time: start + i, duration: 1.5, midi: degreeToMidi(key, deg, 5), velocity: 0.6 });
+        notes.push({
+          track: "lead", time: start + i, duration: 1.5,
+          midi: degreeToMidi(key, deg, 5), velocity: 0.6,
+          source: { kind: "readme", path: snap.readme!.path, word: w },
+        });
       });
       if (words.length > 0) offset = words.length + 1;
     }
@@ -123,24 +135,28 @@ export function composeStructure(snap: RepoSnapshot): Score {
     const step = picks.length > 0 ? avail / picks.length : 0;
 
     picks.forEach((f, i) => {
-      const time = start + offset + Math.round(i * step * 2) / 2; // snap to half-beats
+      const time = start + offset + Math.round(i * step * 2) / 2;
       const deg = pathToDegree(f.path, scaleLen * 2, salt);
       const octave = clamp(5 - f.depth, 3, 5);
       const sizeBits = Math.log2(f.size + 1);
       const duration = Math.min(clamp(0.5 + (sizeBits - 6) * 0.5, 0.5, 6), start + len - time);
       const velocity = clamp(0.7 - 0.1 * f.depth + Math.min(0.1, sizeBits / 200), 0.3, 0.85);
-      notes.push({ track: "lead", time, duration, midi: degreeToMidi(key, deg, octave), velocity });
+            notes.push({
+        track: "lead", time, duration,
+        midi: degreeToMidi(key, deg, octave), velocity,
+        source: { kind: "file", path: f.path, size: f.size },
+      });
     });
 
     cursor += len;
   });
 
   sections.push({ name: "coda", start: cursor, length: CODA_BEATS });
-  notes.push({ track: "drone", time: cursor, duration: CODA_BEATS, midi: degreeToMidi(key, 0, 2), velocity: 0.5 });
+    notes.push({ track: "drone", time: cursor, duration: CODA_BEATS, midi: degreeToMidi(key, 0, 2), velocity: 0.5, source: { kind: "coda" } });
   for (const step of [0, 2, 4]) {
-    notes.push({ track: "pad", time: cursor, duration: CODA_BEATS, midi: degreeToMidi(key, step, 3), velocity: 0.34 });
+    notes.push({ track: "pad", time: cursor, duration: CODA_BEATS, midi: degreeToMidi(key, step, 3), velocity: 0.34, source: { kind: "coda" } });
   }
-  notes.push({ track: "lead", time: cursor, duration: CODA_BEATS, midi: degreeToMidi(key, 0, 4), velocity: 0.5 });
+  notes.push({ track: "lead", time: cursor, duration: CODA_BEATS, midi: degreeToMidi(key, 0, 4), velocity: 0.5, source: { kind: "coda" } });
   cursor += CODA_BEATS;
 
   return {

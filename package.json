@@ -1,16 +1,32 @@
 {
   "name": "gitsoundify",
   "private": true,
+  "type": "module",
   "scripts": {
     "extract": "bun run src/cli.ts",
     "test": "bun test",
     "preview": "bun run src/preview.ts",
-    "song": "bun run src/song.ts"
+    "song": "bun run src/song.ts",
+    "dev": "concurrently -k -n api,web -c blue,magenta \"bun run server\" \"bunx --bun vite\"",
+    "server": "bun --watch server/index.ts",
+    "build": "bunx --bun vite build",
+    "start": "bun server/index.ts",
+    "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
-    "@types/bun": "latest"
+    "@tailwindcss/vite": "^4.3.3",
+    "@types/bun": "latest",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.1.2",
+    "concurrently": "^10.0.6",
+    "tailwindcss": "^4.3.3",
+    "typescript": "^5",
+    "vite": "^8.3.5"
   },
-  "peerDependencies": {
-    "typescript": "^7"
+  "dependencies": {
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "tone": "^15.1.22"
   }
 }

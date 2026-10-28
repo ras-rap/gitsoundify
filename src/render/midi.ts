@@ -52,11 +52,14 @@ function encodeTrack(events: TimedEvent[]): number[] {
   return chunk("MTrk", data);
 }
 
+const panByte = (pan: number) => Math.max(0, Math.min(127, Math.round((clamp1(pan) + 1) * 63.5)));
+const clamp1 = (x: number) => Math.max(-1, Math.min(1, x));
+
 export function scoreToMidi(score: Score): Uint8Array {
   const tempoTrack: TimedEvent[] = [
     { tick: 0, order: 1, bytes: textMeta(0x03, `${score.name} (${score.mode})`) },
     { tick: 0, order: 1, bytes: [0xff, 0x51, 0x03, ...u32(Math.round(60_000_000 / score.bpm)).slice(1)] },
-    { tick: 0, order: 1, bytes: [0xff, 0x58, 0x04, 4, 2, 24, 8] }, // 4/4
+    { tick: 0, order: 1, bytes: [0xff, 0x58, 0x04, 4, 2, 24, 8] },
   ];
 
   const tracks = TRACKS.map((id) => {
@@ -70,6 +73,9 @@ export function scoreToMidi(score: Score): Uint8Array {
       const on = Math.round(n.time * PPQ);
       const off = Math.max(on + 1, Math.round((n.time + n.duration) * PPQ));
       const vel = Math.max(1, Math.min(127, Math.round(n.velocity * 127)));
+      if (n.pan !== undefined) {
+        events.push({ tick: on, order: 0, bytes: [0xb0 | ch, 10, panByte(n.pan)] });
+      }
       events.push({ tick: on, order: 1, bytes: [0x90 | ch, n.midi, vel] });
       events.push({ tick: off, order: 0, bytes: [0x80 | ch, n.midi, 0] });
     }
