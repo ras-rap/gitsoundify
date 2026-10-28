@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
-import { bucketCommits, ROOT_DIR, topDir } from "./src/extract/bucket";
-import type { CommitStat } from "./src/extract/types";
+import { bucketCommits, ROOT_DIR, topDir } from "../src/extract/bucket";
+import type { CommitStat } from "../src/extract/types";
 
 const commit = (time: number, over: Partial<CommitStat> = {}): CommitStat => ({
   hash: `h${time}`,
@@ -46,14 +46,13 @@ test("a long dormant gap shows up as empty slices without swallowing the bursts"
   const burstB = [0, 5 * MIN, 10 * MIN].map((t) => commit(365 * DAY + t));
   const s = bucketCommits([...burstA, ...burstB], { slices: 100 });
   const filled = s.filter((x) => x.commitCount > 0);
-  expect(filled.length).toBeLessThanOrEqual(4); // each burst collapses into 1-2 slices
+  expect(filled.length).toBeLessThanOrEqual(4);
   expect(s.filter((x) => x.commitCount === 0).length).toBeGreaterThan(90);
 });
 
 test("log compression: a year of silence isn't 365x a day of silence", () => {
   const day = bucketCommits([commit(0), commit(DAY), commit(2 * DAY)], { slices: 100 });
   const year = bucketCommits([commit(0), commit(DAY), commit(365 * DAY)], { slices: 100 });
-  // with linear time the middle commit would sit at ~0.3% of the way; here it stays visibly separate
   const firstGapSlices = (s: typeof day) => s.findIndex((x, i) => i > 0 && x.commitCount > 0);
   expect(firstGapSlices(year)).toBeGreaterThan(0);
   expect(firstGapSlices(year)).toBeLessThan(firstGapSlices(day));
@@ -79,7 +78,7 @@ test("dirs, authors and cumulativeNet carry through", () => {
   );
   expect(s[0]!.dirs).toEqual({ [ROOT_DIR]: 1, src: 2 });
   expect(s[0]!.authors).toEqual(["bo"]);
-  expect(s[1]!.cumulativeNet).toBe(5); // empty slice carries the running total
+  expect(s[1]!.cumulativeNet).toBe(5);
   expect(s[3]!.cumulativeNet).toBe(2);
 });
 

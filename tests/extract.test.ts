@@ -1,11 +1,11 @@
 import { expect, test } from "bun:test";
-import { parseLog } from "./src/extract/history";
-import { buildTree, extensionBytes, parseLsTree } from "./src/extract/tree";
+import { parseLog } from "../src/extract/history";
+import { buildTree, extensionBytes, parseLsTree } from "../src/extract/tree";
 
 test("parseLog handles numstat, binaries, and empty commits", () => {
   const raw =
     "\x1eaaa\x1f100\x1fAda\x1ffirst\n\n10\t2\tsrc/a.ts\n-\t-\tlogo.png\n" +
-    "\x1ebbb\x1f200\x1fBo\x1f\n"; // no subject, no files
+    "\x1ebbb\x1f200\x1fBo\x1f\n"; 
   const [a, b] = parseLog(raw);
   expect(a).toMatchObject({ hash: "aaa", time: 100, author: "Ada", message: "first", filesChanged: 2, added: 10, removed: 2 });
   expect(a!.paths).toEqual(["src/a.ts", "logo.png"]);

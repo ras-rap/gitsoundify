@@ -4,7 +4,8 @@
   "scripts": {
     "extract": "bun run src/cli.ts",
     "test": "bun test",
-    "preview": "bun run src/preview.ts"
+    "preview": "bun run src/preview.ts",
+    "song": "bun run src/song.ts"
   },
   "devDependencies": {
     "@types/bun": "latest"
