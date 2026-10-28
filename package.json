@@ -1,0 +1,15 @@
+{
+  "name": "gitsoundify",
+  "private": true,
+  "scripts": {
+    "extract": "bun run src/cli.ts",
+    "test": "bun test",
+    "preview": "bun run src/preview.ts"
+  },
+  "devDependencies": {
+    "@types/bun": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^7"
+  }
+}
