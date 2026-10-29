@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { scoreSeconds, type NoteEvent, type Score, type TrackId } from "../compose/score";
 import { describeSource } from "../compose/source";
+import { ROLL_COLOR } from "./theme";
 
 const HEIGHT = 240;
 /** Height of the band reserved for section labels at the top of the roll. */
@@ -136,9 +137,16 @@ export function Roll({ score, position, onSeek }: Props) {
   const tipLeft = hover ? (hover.x + TIP_W + 16 > width ? hover.x - TIP_W - 12 : hover.x + 12) : 0;
 
   return (
-    <div
+        <div
       ref={wrapRef}
-      className="relative w-full cursor-crosshair select-none overflow-hidden rounded-lg bg-black/30 ring-1 ring-white/10"
+      tabIndex={0}
+      role="slider"
+      aria-label="Playhead position"
+      aria-valuemin={0}
+      aria-valuemax={Math.round(total)}
+      aria-valuenow={Math.round(position)}
+      aria-valuetext={`${Math.floor(position / 60)} minutes ${Math.round(position % 60)} seconds`}
+      className="relative w-full cursor-crosshair overflow-hidden rounded-lg bg-black/30 ring-1 ring-white/10 outline-none select-none focus-visible:ring-2 focus-visible:ring-indigo-400"
       style={{ height: HEIGHT }}
       onPointerMove={(e) => {
         const rect = e.currentTarget.getBoundingClientRect();
@@ -148,6 +156,19 @@ export function Roll({ score, position, onSeek }: Props) {
         setHover(note ? { note, x: px, y: py } : null);
       }}
       onPointerLeave={() => setHover(null)}
+      onKeyDown={(e) => {
+        // Mirrors the global arrow handler in App; without this, a focused roll would swallow keys.
+        const step = e.shiftKey ? 15 : 5;
+        let next: number | null = null;
+        if (e.key === "ArrowLeft") next = position - step;
+        else if (e.key === "ArrowRight") next = position + step;
+        else if (e.key === "Home") next = 0;
+        else if (e.key === "End") next = total;
+        if (next === null) return;
+        e.preventDefault();
+        e.stopPropagation();
+        onSeek(Math.max(0, Math.min(total, next)));
+      }}
       onClick={(e) => {
         const rect = e.currentTarget.getBoundingClientRect();
         // Map the click's horizontal fraction of the roll back to a time in seconds.

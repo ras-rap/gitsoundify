@@ -34,6 +34,8 @@ export class Engine {
   private voices: Voices | null = null;
   private score: Score | null = null;
   private scheduled = false;
+  private master: Tone.Gain | null = null;
+  private volume = 0.8;
 
   get duration(): number {
     return this.score ? (this.score.lengthBeats * 60) / this.score.bpm : 0;
@@ -45,6 +47,11 @@ export class Engine {
 
   get isPlaying(): boolean {
     return Tone.getTransport().state === "started";
+  }
+
+  setVolume(v: number): void {
+    this.volume = Math.max(0, Math.min(1, v));
+    this.master?.gain.rampTo(this.volume, 0.1);
   }
 
   setScore(score: Score): void {
@@ -61,7 +68,9 @@ export class Engine {
   private async build(): Promise<Voices> {
     if (this.voices) return this.voices;
 
-    const limiter = new Tone.Limiter(-1).toDestination();
+    // Master gain sits after the limiter so the volume slider can't push the mix into clipping.
+    this.master = new Tone.Gain(this.volume).toDestination();
+    const limiter = new Tone.Limiter(-1).connect(this.master);
     const reverb = new Tone.Reverb({ decay: 9, preDelay: 0.05, wet: 0.5 }).connect(limiter);
     // Reverb generation is async; finish building the graph only once the impulse response exists.
     await reverb.ready;
