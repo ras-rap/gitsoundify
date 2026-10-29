@@ -225,7 +225,7 @@ export default function App() {
   return (
     <div className="mx-auto flex min-h-screen max-w-4xl flex-col px-5 py-10">
       <header className="mb-6">
-        <h1 className="text-3xl font-semibold tracking-tight text-white">Repo to Song</h1>
+        <h1 className="text-3xl font-semibold tracking-tight text-white">Git Soundify</h1>
         <p className="mt-2 max-w-2xl text-sm leading-relaxed text-gray-400">
           Every repository has a shape. Paste a public GitHub repo and it gets compiled into a short piece —
           folders become sections, files become notes, commit churn becomes tension. Deterministic: the same

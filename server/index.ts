@@ -2,6 +2,8 @@ import { join, normalize, sep } from "node:path";
 import { extractFromSource } from "../src/extract";
 import type { RepoSnapshot } from "../src/extract/types";
 import { parseRepoInput } from "./repo-input";
+import { badgeFor, badgeSvg } from "./badge";
+
 
 const PORT = Number(process.env.PORT ?? 3001);
 const DIST = join(import.meta.dir, "..", "dist");
@@ -14,6 +16,8 @@ const CACHE_TTL_MS = 10 * 60 * 1000;
 const MAX_CONCURRENT_CLONES = 3;
 const DEFAULT_MAX_COMMITS = 2000;
 const HARD_MAX_COMMITS = 20000;
+const BADGE_MAX_COMMITS = 200;
+
 
 const cache = new Map<string, { at: number; snap: RepoSnapshot }>();
 const inflight = new Map<string, Promise<RepoSnapshot>>();
@@ -39,6 +43,31 @@ async function getSnapshot(url: string, maxCommits: number): Promise<RepoSnapsho
     .finally(() => inflight.delete(key));
   inflight.set(key, p);
   return p;
+}
+
+async function handleBadge(url: URL): Promise<Response> {
+  // /badge/owner/repo.svg
+  const m = /^\/badge\/([^/]+)\/([^/]+?)(?:\.svg)?$/.exec(url.pathname);
+  const svg = (body: string, cache: string) =>
+    new Response(body, {
+      headers: { "content-type": "image/svg+xml; charset=utf-8", "cache-control": cache },
+    });
+
+  if (!m) return svg(badgeSvg("gitsoundify", "bad repo", "#ef4444"), "public, max-age=60");
+
+  const ref = parseRepoInput(`${m[1]}/${m[2]}`);
+  if (!ref) return svg(badgeSvg("gitsoundify", "invalid repo", "#ef4444"), "public, max-age=60");
+
+  const pinned = url.searchParams.get("mode") ?? undefined;
+
+  try {
+    const snap = await getSnapshot(ref.url, BADGE_MAX_COMMITS);
+    // Long-lived: the score is deterministic, so the badge only changes when the repo changes.
+    return svg(badgeFor(snap, pinned), "public, max-age=3600, s-maxage=86400, stale-while-revalidate=604800");
+  } catch {
+    // Short-lived on failure, so a transient clone error isn't cached for a day.
+    return svg(badgeSvg("gitsoundify", "not found", "#ef4444"), "public, max-age=300");
+  }
 }
 
 /** GET /api/snapshot?repo=&max= — JSON errors carry the HTTP status the client shows. */
@@ -83,6 +112,7 @@ Bun.serve({
   async fetch(req) {
     const url = new URL(req.url);
     if (url.pathname === "/api/snapshot") return handleSnapshot(url);
+    if (url.pathname.startsWith("/badge/")) return handleBadge(url);
     if (url.pathname.startsWith("/api/")) return json({ error: "Not found" }, 404);
     return serveStatic(url.pathname);
   },
