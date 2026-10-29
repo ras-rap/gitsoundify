@@ -3,6 +3,7 @@ import { scoreSeconds, type NoteEvent, type Score, type TrackId } from "../compo
 import { describeSource } from "../compose/source";
 
 const HEIGHT = 240;
+/** Height of the band reserved for section labels at the top of the roll. */
 const TOP = 24;
 
 const COLORS: Record<TrackId, string> = {
@@ -11,14 +12,21 @@ const COLORS: Record<TrackId, string> = {
   lead: "rgba(251, 191, 36, 0.95)",
 };
 
+/** Hit-testing priority: front-most track first, so overlapping hover targets resolve top-down. */
 const HIT_ORDER: readonly TrackId[] = ["lead", "drone", "pad"];
 
 interface Props {
   score: Score;
+  /** Playhead position in seconds, clamped to the score length when drawn. */
   position: number;
   onSeek: (seconds: number) => void;
 }
 
+/**
+ * Piano-roll view of a {@link Score}: section bands, per-track notes, a playhead and a hover
+ * tooltip. Notes are painted on a canvas; the playhead and tooltip are DOM overlays so they can
+ * be positioned by percentage and styled with CSS.
+ */
 export function Roll({ score, position, onSeek }: Props) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -26,6 +34,7 @@ export function Roll({ score, position, onSeek }: Props) {
   const [hover, setHover] = useState<{ note: NoteEvent; x: number; y: number } | null>(null);
   const total = scoreSeconds(score);
 
+  // Track the wrapper's width rather than the window's: the roll is fluid inside the layout.
   useEffect(() => {
     const el = wrapRef.current;
     if (!el) return;
@@ -34,6 +43,7 @@ export function Roll({ score, position, onSeek }: Props) {
     return () => ro.disconnect();
   }, []);
 
+  /** Pixel mapping for the current score: pitch range, row height and beat/pitch -> px converters. */
   const geo = useMemo(() => {
     let lo = 127;
     let hi = 0;
@@ -43,8 +53,10 @@ export function Roll({ score, position, onSeek }: Props) {
     }
     if (score.notes.length === 0) { lo = 60; hi = 60; }
     const rows = hi - lo + 1;
+    // Squeeze rows between 3px and 9px so wide pitch ranges still fit in HEIGHT.
     const rowH = Math.max(3, Math.min(9, (HEIGHT - TOP - 6) / rows));
     const x = (beat: number) => (beat / score.lengthBeats) * width;
+    // Pitch 0 at the bottom; y() returns the top edge of the note's row.
     const y = (midi: number) => HEIGHT - 6 - ((midi - lo + 1) / rows) * (HEIGHT - TOP - 6);
     return { x, y, rowH };
   }, [score, width]);
@@ -54,6 +66,8 @@ export function Roll({ score, position, onSeek }: Props) {
     const ctx = canvas?.getContext("2d");
     if (!canvas || !ctx) return;
 
+    // Size the backing store in device pixels, then scale the context so the rest of the drawing
+    // code keeps working in CSS pixels.
     const dpr = window.devicePixelRatio || 1;
     canvas.width = width * dpr;
     canvas.height = HEIGHT * dpr;
@@ -61,6 +75,7 @@ export function Roll({ score, position, onSeek }: Props) {
     ctx.clearRect(0, 0, width, HEIGHT);
 
     score.sections.forEach((s, i) => {
+      // Alternate a faint wash so section boundaries are readable without grid lines.
       if (i % 2 === 0) {
         ctx.fillStyle = "rgba(255,255,255,0.035)";
         ctx.fillRect(geo.x(s.start), 0, geo.x(s.length) - geo.x(0), HEIGHT);
@@ -94,14 +109,17 @@ export function Roll({ score, position, onSeek }: Props) {
     }
   }, [score, width, geo, hover]);
 
+  /** Bounding box of a note in CSS pixels; -1 keeps adjacent notes visually separated. */
   const noteRect = (n: NoteEvent) => {
     const left = geo.x(n.time);
     const w = Math.max(2, geo.x(n.duration) - geo.x(0) - 1);
     return { left, top: geo.y(n.midi), w, h: geo.rowH };
   };
 
+  /** Topmost note under the cursor, or null. Later notes win within a track (last drawn = on top). */
   const hitTest = (px: number, py: number): NoteEvent | null => {
     for (const track of HIT_ORDER) {
+      // Walk backwards: the render loop draws in array order, so later notes sit on top.
       for (let i = score.notes.length - 1; i >= 0; i--) {
         const n = score.notes[i]!;
         if (n.track !== track) continue;
@@ -114,6 +132,7 @@ export function Roll({ score, position, onSeek }: Props) {
 
   const frac = total > 0 ? Math.min(1, position / total) : 0;
   const TIP_W = 260;
+  // Flip the tooltip to the left of the cursor when it would overflow the right edge.
   const tipLeft = hover ? (hover.x + TIP_W + 16 > width ? hover.x - TIP_W - 12 : hover.x + 12) : 0;
 
   return (
@@ -131,6 +150,7 @@ export function Roll({ score, position, onSeek }: Props) {
       onPointerLeave={() => setHover(null)}
       onClick={(e) => {
         const rect = e.currentTarget.getBoundingClientRect();
+        // Map the click's horizontal fraction of the roll back to a time in seconds.
         onSeek(Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width)) * total);
       }}
     >

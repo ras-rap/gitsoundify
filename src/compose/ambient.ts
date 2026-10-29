@@ -11,8 +11,11 @@ const MAX_ERAS = 8;
 const SLICES_PER_ERA = 32;
 const CHURN_WINDOW = 4;
 const CHURN_DECAY = 0.82;
+// Ambient pieces aim for 95-175 seconds; the beat length is back-solved from the chosen tempo.
 const TARGET_SECONDS: [number, number] = [95, 175];
 
+// Pad voicing in scale degrees from the chord's root; the last entry is a tension tone that only
+// sounds in dense passages. Voice count never exceeds this array's length.
 const CHORD = [0, 2, 4, 6, 1] as const;
 const MAX_VOICES = CHORD.length;
 
@@ -26,6 +29,10 @@ export interface AmbientOptions {
   seedLabel?: string;
 }
 
+/**
+ * Most-touched top-level directory in a slice, with ties broken alphabetically so the result never
+ * depends on object key order. Returns "" when the slice touched no files.
+ */
 function dominantDir(slice: Slice): string {
   let best = "";
   let bestCount = -1;
@@ -39,6 +46,11 @@ function dominantDir(slice: Slice): string {
 }
 
 
+/**
+ * Per-slice tension in 0..1: churn (added + removed lines) averaged over a +/-CHURN_WINDOW
+ * neighbourhood, normalized against the loudest point, then ratcheted so a value may only fall to
+ * CHURN_DECAY of its predecessor. The ratchet keeps tension broad and rolling instead of spiky.
+ */
 function tensionCurve(slices: Slice[]): number[] {
   const churn = slices.map((s) => s.added + s.removed);
 
@@ -61,6 +73,7 @@ function tensionCurve(slices: Slice[]): number[] {
   return out;
 }
 
+/** One sustained pad chord: `from`/`to` are slice indices (not beats) spanning a harmony block. */
 interface HarmonyBlock {
   from: number;
   to: number;
@@ -70,6 +83,12 @@ interface HarmonyBlock {
   source: NoteSource;
 }
 
+/**
+ * Ambient mode: the commit history becomes a drone, evolving pad chords and sparse lead notes. Every
+ * tempo, key and length default is seeded from `seedLabel` + repo name, so the result is reproducible;
+ * `opts` pins any of them instead (blend mode reuses the structure score's tempo/key/length).
+ * `historyWeight` 0..1 thins the texture, and 0 leaves just the drone.
+ */
 export function composeAmbient(snap: RepoSnapshot, opts: AmbientOptions = {}): Score {
   const weight = clamp(opts.historyWeight ?? 1, 0, 1);
   const seed = makeSeed(snap.name, opts.seedLabel ?? "ambient");
@@ -104,6 +123,7 @@ export function composeAmbient(snap: RepoSnapshot, opts: AmbientOptions = {}): S
     };
   }
 
+  // At most one slice per commit, floored at 8 so very short histories still get a shape.
   const sliceCount = Math.min(SLICE_TARGET, Math.max(8, snap.commits.length));
   const slices = bucketCommits(snap.commits, { slices: sliceCount });
   const sliceBeats = lengthBeats / sliceCount;
@@ -115,6 +135,8 @@ export function composeAmbient(snap: RepoSnapshot, opts: AmbientOptions = {}): S
   const authors = new Set<string>();
   for (const s of slices) for (const a of s.authors) authors.add(a);
   const solo = authors.size <= 1;
+  // A single-author repo stays centred; otherwise pan comes from the first (sorted) author's hash,
+  // so one person keeps a stable position across the whole piece.
   const panFor = (list: string[]): number =>
     solo || list.length === 0 ? 0 : pathToUnit(list[0]!, salt) * 2 - 1;
 
@@ -162,6 +184,8 @@ export function composeAmbient(snap: RepoSnapshot, opts: AmbientOptions = {}): S
     const size = Math.log2(1 + Math.max(0, avgNet)) / Math.log2(1 + maxNet);
     const added = members.reduce((n, s) => n + s.added, 0);
     const removed = members.reduce((n, s) => n + s.removed, 0);
+    // Chord size follows average cumulative line count relative to the repo's peak, and a block that
+    // deletes more than it adds is thinned.
     const density = clamp(0.25 + 0.75 * size, 0, 1) * (removed > added ? 0.7 : 1);
 
     const t = Math.max(...members.map((_, i) => tension[from + i] ?? 0));
@@ -197,6 +221,8 @@ export function composeAmbient(snap: RepoSnapshot, opts: AmbientOptions = {}): S
   for (const b of blocks) {
     const start = at(b.from);
     const duration = at(b.to) - at(b.from);
+    // Shift the whole chord by 0, 2 or 4 degrees per directory so consecutive blocks do not all sit
+    // on the tonic.
     const dirShift = [0, 2, 4][hash32(b.dir) % 3]!;
 
     for (let v = 0; v < b.voices; v++) {
@@ -204,6 +230,8 @@ export function composeAmbient(snap: RepoSnapshot, opts: AmbientOptions = {}): S
       const voiceId = `${midi}:${b.pan.toFixed(4)}`;
       const prev = sustained.get(voiceId);
 
+      // If the previous block ended exactly where this one starts, hold its note instead of starting a
+      // new one: a steady chord should read as one long note, not a run of touching ones.
       if (prev && Math.abs(prev.time + prev.duration - start) < 1e-9) {
         prev.duration += duration; 
         continue;

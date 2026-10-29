@@ -4,6 +4,7 @@ import { extractFromSource } from "./extract";
 import { scoreToMidi } from "./render/midi";
 
 const args = Bun.argv.slice(2);
+// Pull a --flag value pair out of argv so the source stays at args[0] no matter where flags sit.
 const take = (flag: string) => {
   const i = args.indexOf(flag);
   return i === -1 ? undefined : args.splice(i, 2)[1];
@@ -19,10 +20,11 @@ if (!source) {
 }
 
 const snap = await extractFromSource(source, { maxCommits: max ? Number(max) : undefined });
+// An unrecognised or missing --mode falls back to the commit-count heuristic.
 const mode: Mode =
   modeArg === "structure" || modeArg === "ambient" || modeArg === "blend" ? modeArg : selectMode(snap.commitCount);
 const score = compose(snap, mode);
-const file = out ?? `${snap.name}.${score.mode}.mid`;
+const file = out ?? `${snap.name}.${score.mode}.mid`; // score.mode, not modeArg, so the filename always reflects the mode used.
 await Bun.write(file, scoreToMidi(score));
 
 const secs = Math.round(scoreSeconds(score));

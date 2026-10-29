@@ -6,6 +6,7 @@ import type { CommitStat, RepoSnapshot } from "../src/extract/types";
 
 const DAY = 86400;
 
+/** One commit per day starting at epoch 0 with fixed +20/-5 churn; `over` replaces individual fields. */
 function commit(i: number, over: Partial<CommitStat> = {}): CommitStat {
   return {
     hash: `h${i}`,
@@ -20,6 +21,7 @@ function commit(i: number, over: Partial<CommitStat> = {}): CommitStat {
   };
 }
 
+/** The tree is held constant here: ambient mode is scored from commit history, so only that varies. */
 function snapOf(commits: CommitStat[], name = "demo"): RepoSnapshot {
   return {
     name,
@@ -34,6 +36,7 @@ function snapOf(commits: CommitStat[], name = "demo"): RepoSnapshot {
   };
 }
 
+/** Sections tile the piece and every note stays in legal MIDI/velocity ranges; pan, when set, is -1..1. */
 function checkInvariants(s: Score) {
   let pos = 0;
   for (const sec of s.sections) {
@@ -85,6 +88,7 @@ test("a long dormant gap becomes silence in the middle of the piece", () => {
   const lo = s.lengthBeats * 0.35;
   const hi = s.lengthBeats * 0.65;
   const startsInGap = s.notes.filter((n) => n.track !== "drone" && n.time > lo && n.time < hi);
+  // A year of dead time maps to the middle third, where only the drone may sound.
   expect(startsInGap).toHaveLength(0);
 });
 
@@ -96,11 +100,13 @@ test("deletions thin the texture", () => {
   const mid = s.lengthBeats / 2;
   const early = s.notes.filter((n) => n.track === "pad" && n.time < mid).length;
   const late = s.notes.filter((n) => n.track === "pad" && n.time >= mid).length;
+  // The second half is deletions only, so the pad must thin out rather than hold its density.
   expect(late).toBeLessThan(early);
 });
 
 test("stereo: a solo repo stays centred, multiple authors spread out", () => {
   const solo = composeAmbient(snapOf(Array.from({ length: 60 }, (_, i) => commit(i))));
+  // One author means one pan position for the whole piece.
   expect(new Set(solo.notes.map((n) => (n.pan ?? 0).toFixed(3))).size).toBe(1);
 
   const duo = composeAmbient(
@@ -114,6 +120,8 @@ test("historyWeight 0 blends back to pure structure", () => {
   const structure = composeStructure(snap);
   const blend = composeBlend(snap);
 
+  // At historyWeight 0 the blend must inherit structure's key, tempo, length and section grid
+  // verbatim and only layer ambient texture on top.
   expect(blend.mode).toBe("blend");
   expect(blend.bpm).toBe(structure.bpm);
   expect(blend.key).toEqual(structure.key);

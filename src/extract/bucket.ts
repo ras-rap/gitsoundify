@@ -2,9 +2,15 @@ import type { CommitStat } from "./types";
 
 export const ROOT_DIR = "(root)";
 
+// Sample caps: slices keep only a few hashes/paths as examples rather than full membership lists.
 const HASHES_PER_SLICE = 4;
 const PATHS_PER_SLICE = 8;
 
+/**
+ * One fixed-width segment of the commit timeline. Slices are ordered in time (`index` 0 is oldest)
+ * and cover the same amount of *gap-warped* time, so each one holds a varying number of commits.
+ * `dirs` counts touched files per top-level directory; `cumulativeNet` is a running line total.
+ */
 export interface Slice {
   index: number;
   commitCount: number;
@@ -21,8 +27,10 @@ export interface Slice {
 }
 
 export interface BucketOptions {
+  /** Number of output slices; the timeline is divided evenly across them. */
   slices?: number;
 
+  /** Gap in seconds that counts as one unit of musical time when warping the timeline. */
   gapScaleSeconds?: number;
 }
 
@@ -31,16 +39,24 @@ export function topDir(path: string): string {
   return i === -1 ? ROOT_DIR : path.slice(0, i);
 }
 
+/**
+ * Distributes commits across a fixed number of slices over a warped timeline: each inter-commit
+ * gap contributes `log1p(gap / scale)` instead of its raw length, so busy periods spread out and
+ * multi-month dormancies collapse into a single step.
+ */
 export function bucketCommits(commits: CommitStat[], opts: BucketOptions = {}): Slice[] {
   const n = opts.slices ?? 256;
   const scale = opts.gapScaleSeconds ?? 3600;
   if (commits.length === 0) return [];
 
+  // Stable by design: equal timestamps fall back to input position so output stays deterministic.
   const sorted = commits
     .map((c, i) => ({ c, i }))
     .sort((a, b) => a.c.time - b.c.time || a.i - b.i)
     .map((x) => x.c);
 
+  // Warped position per commit; negative gaps are clamped since `git log --reverse` can still emit
+  // non-monotonic author dates after rebases.
   const pos: number[] = [0];
   for (let i = 1; i < sorted.length; i++) {
     const gap = Math.max(0, sorted[i]!.time - sorted[i - 1]!.time);
@@ -65,7 +81,10 @@ export function bucketCommits(commits: CommitStat[], opts: BucketOptions = {}): 
   const authorSets: Set<string>[] = Array.from({ length: n }, () => new Set());
 
   sorted.forEach((c, i) => {
+    // Normalise to 0..1; when every commit shares one timestamp the timeline has no extent, so fall
+    // back to index order to keep the commits spread across slices.
     const p = total > 0 ? pos[i]! / total : sorted.length > 1 ? i / (sorted.length - 1) : 0;
+    // A commit at p === 1 would index past the end, so pin it into the final slice.
     const s = slices[Math.min(n - 1, Math.floor(p * n))]!;
 
     s.commitCount++;

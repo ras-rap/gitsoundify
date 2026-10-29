@@ -5,6 +5,7 @@ import { scoreToMidi, vlq } from "../src/render/midi";
 import { composeStructure } from "../src/compose";
 import { normalizeNotes, scoreSeconds, type Score } from "../src/compose/score";
 
+/** Minimal snapshot for structure mode: the file tree drives everything, history is empty. */
 function snapOf(files: { path: string; size: number }[], name = "demo", readme: string | null = null): RepoSnapshot {
   return {
     name,
@@ -19,6 +20,7 @@ function snapOf(files: { path: string; size: number }[], name = "demo", readme: 
   };
 }
 
+/** The realistic repo shape reused across tests: root files, src split over 9 dirs, docs and tests. */
 const bigRepo = () =>
   snapOf([
     { path: "README.md", size: 400 },
@@ -51,6 +53,7 @@ test("empty repo still produces a valid score (just the coda)", () => {
   expect(s.notes.length).toBeGreaterThan(0);
 });
 
+/** Sections must tile [0, lengthBeats) with no gaps, and every note must sit in legal ranges and end inside the piece. */
 function checkInvariants(s: Score) {
   let pos = 0;
   for (const sec of s.sections) {
@@ -79,6 +82,8 @@ test("invariants hold for big, tiny, and odd repos", () => {
 test("huge repos stay within the section and length budget", () => {
   const many = snapOf(Array.from({ length: 40 }, (_, i) => ({ path: `d${i}/f${i}.ts`, size: 100 })));
   const s = composeStructure(many);
+  // Hard caps keep a huge repo listenable: bounded section count, and length grows only by a
+  // fixed allowance per section on top of the base and intro.
   expect(s.sections.length).toBeLessThanOrEqual(11); 
   expect(s.lengthBeats).toBeLessThanOrEqual(160 + 8 + 4 * 10); 
 });
@@ -93,6 +98,7 @@ test("a file keeps its pitch regardless of other files in the repo", () => {
   const a = composeStructure(snapOf([{ path: "src/a.ts", size: 4096 }], "same"));
   const b = composeStructure(snapOf([{ path: "src/a.ts", size: 4096 }, { path: "src/b.ts", size: 4096 }], "same"));
   const leadA = a.notes.filter((n) => n.track === "lead" && n.time < a.sections[0]!.length).map((n) => n.midi);
+  // Pitch derives from the path hash alone, so adding a sibling file must not transpose the original.
   expect(b.notes.some((n) => n.track === "lead" && leadA.includes(n.midi))).toBe(true);
 });
 
@@ -103,13 +109,16 @@ test("normalizeNotes trims same-pitch overlaps and merges duplicates", () => {
     { track: "lead", time: 2, duration: 1, midi: 60, velocity: 0.9 },
     { track: "pad", time: 0, duration: 4, midi: 60, velocity: 0.5 },
   ]);
+  // Overlap is trimmed, not dropped: the note at 0 is cut to end where the one at 2 begins.
   expect(out.filter((n) => n.track === "lead")).toHaveLength(2);
   expect(out.find((n) => n.track === "lead" && n.time === 0)!.duration).toBe(2);
+  // Same pitch and onset collapse into the louder take.
   expect(out.find((n) => n.track === "lead" && n.time === 2)!.velocity).toBe(0.9);
   expect(out.filter((n) => n.track === "pad")).toHaveLength(1);
 });
 
 test("vlq encodes per the MIDI spec", () => {
+  // 0x7f is the last single-byte value; 0x0fffffff is the largest a 4-byte VLQ can carry.
   expect(vlq(0)).toEqual([0x00]);
   expect(vlq(0x7f)).toEqual([0x7f]);
   expect(vlq(0x80)).toEqual([0x81, 0x00]);
@@ -124,6 +133,7 @@ test("MIDI file is well formed: header, 4 tracks, balanced note on/off", () => {
   const u32 = (o: number) => ((b[o]! << 24) | (b[o + 1]! << 16) | (b[o + 2]! << 8) | b[o + 3]!) >>> 0;
 
   expect(str(0, 4)).toBe("MThd");
+  // Header after the magic: format 1 (multi-track), 4 tracks, 480 ticks per quarter note.
   expect((b[8]! << 8) | b[9]!).toBe(1);
   expect((b[10]! << 8) | b[11]!).toBe(4);
   expect((b[12]! << 8) | b[13]!).toBe(480);

@@ -1,3 +1,7 @@
+/**
+ * FNV-1a pass followed by a murmur3 finalizer, so short inputs ("a", "b") still scatter across
+ * the whole 32-bit range. Returns an unsigned int; every seed in the app bottoms out here.
+ */
 export function hash32(input: string): number {
   let h = 0x811c9dc5;
   for (let i = 0; i < input.length; i++) {
@@ -12,10 +16,17 @@ export function hash32(input: string): number {
   return h >>> 0;
 }
 
+// Name is trimmed and lower-cased so `Foo`, `foo` and `foo ` share one score; `mode` is part of the
+// seed so structure and ambient versions of a repo are independent streams.
 export function makeSeed(repoName: string, mode: string): number {
   return hash32(`${repoName.trim().toLowerCase()}|${mode}`);
 }
 
+/**
+ * Small deterministic PRNG (mulberry32). Same seed => same sequence, which is the whole basis for
+ * a repo always sounding the same. Pull from a `fork` rather than the shared stream when the
+ * consumer must not depend on how many draws happened before it.
+ */
 export class Rng {
   private state: number;
 
@@ -35,6 +46,7 @@ export class Rng {
     return min + (max - min) * this.next();
   }
 
+  // Inclusive on both ends, unlike range().
   int(min: number, max: number): number {
     return min + Math.floor(this.next() * (max - min + 1));
   }
@@ -57,6 +69,7 @@ export function hashPath(path: string, salt: number | string = 0): number {
   return hash32(`${salt}:${path}`);
 }
 
+/** Stable value in [0, 1) for a path: order-independent, unlike taking a draw from a stream. */
 export function pathToUnit(path: string, salt: number | string = 0): number {
   return hashPath(path, salt) / 4294967296;
 }

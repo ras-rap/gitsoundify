@@ -6,6 +6,10 @@ export interface FileEntry {
   size: number;
 }
 
+/**
+ * Parses NUL-separated `git ls-tree -r -l` records (`<mode> <type> <sha> <size>\t<path>`).
+ * Only blobs survive: with `-r` tree entries have no size, and gitlinks encode theirs as `-`.
+ */
 export function parseLsTree(raw: string): FileEntry[] {
   const entries: FileEntry[] = [];
   const re = /^\d+ (\w+) [0-9a-f]+ +(-|\d+)\t([\s\S]+)$/;
@@ -19,6 +23,10 @@ export function parseLsTree(raw: string): FileEntry[] {
   return entries;
 }
 
+/**
+ * Builds a nested tree from flat HEAD entries. Intermediate directories are synthesised from the
+ * paths, and each directory's `size`/`fileCount` are rolled up from its descendants.
+ */
 export function buildTree(entries: FileEntry[], rootName: string): TreeNode {
   const root: TreeNode = { name: rootName, path: "", type: "dir", size: 0, fileCount: 0, children: [] };
   const dirs = new Map<string, TreeNode>([["", root]]);
@@ -27,6 +35,7 @@ export function buildTree(entries: FileEntry[], rootName: string): TreeNode {
     const existing = dirs.get(path);
     if (existing) return existing;
 
+    // Recurse so a missing parent chain is created before the leaf directory.
     const slash = path.lastIndexOf("/");
     const parent = ensureDir(slash === -1 ? "" : path.slice(0, slash));
     const node: TreeNode = {
@@ -56,6 +65,7 @@ export function buildTree(entries: FileEntry[], rootName: string): TreeNode {
 
   const rollUp = (node: TreeNode): void => {
     if (node.type === "file") return;
+    // Sort by name so the rendered tree does not depend on git's traversal order.
     node.children!.sort((a, b) => a.name.localeCompare(b.name));
     node.size = 0;
     node.fileCount = 0;
@@ -70,11 +80,13 @@ export function buildTree(entries: FileEntry[], rootName: string): TreeNode {
   return root;
 }
 
+/** Total bytes per lowercased extension; extensionless files are keyed by `""`. */
 export function extensionBytes(entries: FileEntry[]): Record<string, number> {
   const out: Record<string, number> = {};
   for (const { path, size } of entries) {
     const base = path.slice(path.lastIndexOf("/") + 1);
     const dot = base.lastIndexOf(".");
+    // `dot > 0` keeps dotfiles whole: ".gitignore" has no extension, not extension "gitignore".
     const ext = dot > 0 ? base.slice(dot + 1).toLowerCase() : "";
     out[ext] = (out[ext] ?? 0) + size;
   }
@@ -86,6 +98,10 @@ export async function readTree(dir: string): Promise<FileEntry[]> {
   return parseLsTree(raw);
 }
 
+/**
+ * First root-level readme blob (`README`, `README.md`, ...) and its first non-empty line with
+ * leading Markdown decoration stripped, capped at 200 chars for inline display.
+ */
 export async function findReadme(
   dir: string,
   entries: FileEntry[],

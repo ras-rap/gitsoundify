@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import { bucketCommits, ROOT_DIR, topDir } from "../src/extract/bucket";
 import type { CommitStat } from "../src/extract/types";
 
+/** One commit of a fixed shape; `time` is epoch seconds and churn defaults to +10/-2. */
 const commit = (time: number, over: Partial<CommitStat> = {}): CommitStat => ({
   hash: `h${time}`,
   time,
@@ -23,6 +24,7 @@ test("empty history gives no slices", () => {
 
 test("always returns exactly N slices, first commit in 0, last in N-1", () => {
   const s = bucketCommits([commit(0), commit(DAY), commit(5 * DAY)], { slices: 32 });
+  // The first commit pins to slice 0 and the last to slice N-1, filling every slice in between.
   expect(s).toHaveLength(32);
   expect(s[0]!.commitCount).toBe(1);
   expect(s[31]!.commitCount).toBe(1);
@@ -54,12 +56,15 @@ test("log compression: a year of silence isn't 365x a day of silence", () => {
   const day = bucketCommits([commit(0), commit(DAY), commit(2 * DAY)], { slices: 100 });
   const year = bucketCommits([commit(0), commit(DAY), commit(365 * DAY)], { slices: 100 });
   const firstGapSlices = (s: typeof day) => s.findIndex((x, i) => i > 0 && x.commitCount > 0);
+  // Slice positions follow log-scaled time, so a year-long gap claims fewer slices than a
+  // linear grid would give it; a 365x longer silence must not become 365x more slices.
   expect(firstGapSlices(year)).toBeGreaterThan(0);
   expect(firstGapSlices(year)).toBeLessThan(firstGapSlices(day));
 });
 
 test("identical timestamps spread by index instead of collapsing", () => {
   const s = bucketCommits([commit(5), commit(5), commit(5), commit(5)], { slices: 8 });
+  // Ties in time break by input index, so identical stamps spread instead of collapsing.
   expect(s.filter((x) => x.commitCount > 0).length).toBeGreaterThan(1);
 });
 
@@ -76,8 +81,10 @@ test("dirs, authors and cumulativeNet carry through", () => {
     ],
     { slices: 4 },
   );
+  // Files with no directory land in the ROOT_DIR bucket.
   expect(s[0]!.dirs).toEqual({ [ROOT_DIR]: 1, src: 2 });
   expect(s[0]!.authors).toEqual(["bo"]);
+  // cumulativeNet keeps accruing across slices, so the last slice carries the repo-wide net (+5, -3).
   expect(s[1]!.cumulativeNet).toBe(5);
   expect(s[3]!.cumulativeNet).toBe(2);
 });

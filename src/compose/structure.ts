@@ -33,6 +33,11 @@ function collectFiles(node: TreeNode, out: FileInfo[]): void {
   for (const child of node.children ?? []) collectFiles(child, out);
 }
 
+/**
+ * One section per top-level directory, plus "(root)" for loose files. Only the first level is
+ * expanded; deeper nesting is flattened into its parent. When there are too many directories the
+ * largest survive, then the list is restored to alphabetical order so section order is stable.
+ */
 function planSections(tree: TreeNode): SectionPlan[] {
   const rootFiles: FileInfo[] = [];
   let dirs: SectionPlan[] = [];
@@ -58,11 +63,20 @@ function planSections(tree: TreeNode): SectionPlan[] {
   return rootFiles.length > 0 ? [{ name: ROOT_SECTION, files: rootFiles }, ...dirs] : dirs;
 }
 
+/**
+ * Evenly spaced subset of at most `n` items, in input order. Deliberately deterministic and RNG
+ * free: file picks must be stable for a given repo so repeated renders sound identical.
+ */
 function sample<T>(items: T[], n: number): T[] {
   if (items.length <= n) return items;
   return Array.from({ length: n }, (_, i) => items[Math.floor((i * items.length) / n)]!);
 }
 
+/**
+ * Splits the piece's beat budget across sections. Share is proportional to log2(file count) so one
+ * huge folder cannot swallow the whole piece; each share is clamped between MIN and a per-section
+ * cap, then rounded to whole bars and floored at MIN_SECTION_BEATS.
+ */
 function allocateBeats(plans: SectionPlan[]): number[] {
   const budget = Math.min(MAX_TOTAL_BEATS, 32 + 24 * plans.length);
   const weights = plans.map((p) => Math.log2(1 + p.files.length));
@@ -75,6 +89,11 @@ function allocateBeats(plans: SectionPlan[]): number[] {
   });
 }
 
+/**
+ * Structure mode: the repo's folder tree becomes the form. Every decision — key, tempo, section
+ * lengths, pitches — derives from the repo name and file list via hashes, so the same repo always
+ * yields the same score. Sections are laid end to end from `cursor`, followed by a fixed coda.
+ */
 export function composeStructure(snap: RepoSnapshot): Score {
   const seed = makeSeed(snap.name, "structure");
   const rng = new Rng(seed);
@@ -95,6 +114,7 @@ export function composeStructure(snap: RepoSnapshot): Score {
     const len = beats[si]!;
     sections.push({ name: plan.name, start, length: len });
 
+    // The opening section sits on the tonic; later ones pick a degree from their folder name.
     const sectionDegree = si === 0 ? 0 : pathToDegree(plan.name, scaleLen, salt);
 
     notes.push({
@@ -137,8 +157,11 @@ export function composeStructure(snap: RepoSnapshot): Score {
     picks.forEach((f, i) => {
       const time = start + offset + Math.round(i * step * 2) / 2;
       const deg = pathToDegree(f.path, scaleLen * 2, salt);
+      // Deeper files sing lower: depth 0 is octave 5, floored at 3 so nothing turns muddy.
       const octave = clamp(5 - f.depth, 3, 5);
       const sizeBits = Math.log2(f.size + 1);
+      // Length follows log2 byte size (~0.5 beats per doubling above 64 bytes), capped at 6 beats
+      // and trimmed so the note never runs past its section.
       const duration = Math.min(clamp(0.5 + (sizeBits - 6) * 0.5, 0.5, 6), start + len - time);
       const velocity = clamp(0.7 - 0.1 * f.depth + Math.min(0.1, sizeBits / 200), 0.3, 0.85);
             notes.push({

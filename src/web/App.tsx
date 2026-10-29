@@ -19,8 +19,10 @@ const TRACK_COLOR: Record<TrackId, string> = {
   lead: "rgba(251, 191, 36, 0.95)",
 };
 
+// Cap on the "currently sounding" legend so dense sections do not flood it.
 const MAX_SOUNDING = 6;
 
+/** Only whitelisted ?mode= values are trusted; anything else falls back to auto-picking from commit count. */
 const parseMode = (params: URLSearchParams): ModeChoice => {
   const m = params.get("mode");
   return m === "structure" || m === "ambient" || m === "blend" ? m : "auto";
@@ -49,6 +51,7 @@ export default function App() {
   const load = useCallback(async (value: string) => {
     const repo = value.trim();
     if (!repo) return;
+    // Monotonic request id: a slow earlier response must not overwrite a newer one.
     const id = ++loadId.current;
 
     setStatus("loading");
@@ -73,6 +76,7 @@ export default function App() {
 
   useEffect(() => {
     if (!score) return;
+    // A different score invalidates everything the transport has queued, so rewind before handing it over.
     engine.stop();
     setPlayState("stopped");
     setPosition(0);
@@ -94,9 +98,11 @@ export default function App() {
   useEffect(() => {
     if (playState !== "playing") return;
     let raf = 0;
+    // Sample the transport each frame rather than having the engine push updates; the loop owns the stop condition.
     const tick = () => {
       const p = engine.position;
       setPosition(p);
+      // TAIL_SECONDS lets the last release tails finish before the playhead snaps back to zero.
       if (p >= total + TAIL_SECONDS) {
         engine.stop();
         setPlayState("stopped");
@@ -120,11 +126,13 @@ export default function App() {
     }
   };
 
+  // Clamp for drawing past the end, then convert to beats: notes and the roll are in beats, the transport in seconds.
   const shown = Math.min(position, total);
   const beat = score ? (shown * score.bpm) / 60 : 0;
 
   const sounding = useMemo(() => {
     if (!score) return [];
+    // Collapse to one entry per track + source label, so a source that overlaps itself is listed once.
     const seen = new Set<string>();
     const out: { track: TrackId; label: string }[] = [];
     for (const n of score.notes) {

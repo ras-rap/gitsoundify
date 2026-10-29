@@ -1,3 +1,8 @@
+/**
+ * Provenance of a note, one variant per thing the repo contributed: a file, a README word, a
+ * top-level folder, a slice of commit history, or a generated ending. Only the fields that a
+ * composer actually knows are set, so optional members stay undefined rather than defaulted.
+ */
 export type NoteSource =
   | { kind: "file"; path: string; size?: number; hash?: string }
   | { kind: "readme"; path: string; word: string }
@@ -7,6 +12,7 @@ export type NoteSource =
 
 const short = (hash: string) => hash.slice(0, 7);
 
+/** One-line provenance label for the hover tooltip. Missing source degrades to "unknown". */
 export function describeSource(s: NoteSource | undefined): string {
   if (!s) return "unknown";
   switch (s.kind) {

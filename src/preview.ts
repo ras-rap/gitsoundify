@@ -12,16 +12,20 @@ if (!input) {
   process.exit(1);
 }
 
+// A local .json snapshot is replayed instead of cloning, which makes previewing deterministic.
 const snap: RepoSnapshot =
   input.endsWith(".json") && existsSync(input)
     ? await Bun.file(input).json()
     : await extractFromSource(input, { maxCommits });
-const n = Number(slicesArg) || 64;
+const n = Number(slicesArg) || 64; // Default slice count when [slices] is omitted or not a number.
 const slices = bucketCommits(snap.commits, { slices: n });
 
+// Eighth-height blocks, shortest to tallest.
 const BARS = "▁▂▃▄▅▆▇█";
+/** Scale values to the series max; zero (or negative) renders as emptyChar so gaps stay visible. */
 const spark = (vals: number[], emptyChar = "·") => {
   const max = Math.max(...vals, 1);
+  // ceil() keeps any non-zero value off the empty char; min() guards the v === max bucket.
   return vals.map((v) => (v <= 0 ? emptyChar : BARS[Math.min(BARS.length - 1, Math.ceil((v / max) * BARS.length) - 1)]!)).join("");
 };
 

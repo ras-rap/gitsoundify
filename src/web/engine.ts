@@ -1,8 +1,11 @@
 import * as Tone from "tone";
 import type { Score, TrackId } from "../compose/score";
 
+/** Extra wall-clock seconds kept after the score ends so reverb tails ring out before the UI resets. */
 export const TAIL_SECONDS = 6;
 
+// Pan is quantized to a few lanes so each lane owns one synth + panner chain built once,
+// rather than a node graph per note.
 const PAN_LANES = 5;
 
 const toFreq = (midi: number) => Tone.Frequency(midi, "midi").toFrequency();
@@ -15,6 +18,10 @@ const laneFor = (pan: number): number =>
 
 const lanePan = (lane: number): number => (lane / (PAN_LANES - 1)) * 2 - 1;
 
+/**
+ * One synth per pan lane, each behind its own panner that feeds `out`. The lanes are reused for the
+ * engine's lifetime.
+ */
 function lanesFor(make: () => Lane, out: Tone.ToneAudioNode): Lane[] {
   return Array.from({ length: PAN_LANES }, (_, lane) => {
     const panner = new Tone.Panner(lanePan(lane)).connect(out);
@@ -22,6 +29,7 @@ function lanesFor(make: () => Lane, out: Tone.ToneAudioNode): Lane[] {
   });
 }
 
+/** Owns the tone graph and transport for one page. Score times are in beats; transport times are seconds. */
 export class Engine {
   private voices: Voices | null = null;
   private score: Score | null = null;
@@ -55,6 +63,7 @@ export class Engine {
 
     const limiter = new Tone.Limiter(-1).toDestination();
     const reverb = new Tone.Reverb({ decay: 9, preDelay: 0.05, wet: 0.5 }).connect(limiter);
+    // Reverb generation is async; finish building the graph only once the impulse response exists.
     await reverb.ready;
     const echo = new Tone.PingPongDelay({ delayTime: "8n.", feedback: 0.35, wet: 0.22 }).connect(reverb);
 
@@ -105,6 +114,7 @@ export class Engine {
 
     const transport = Tone.getTransport();
     transport.cancel(0);
+    // Score times are musical (beats); the transport schedules in seconds, so everything scales by seconds-per-beat.
     const spb = 60 / score.bpm;
 
     for (const n of score.notes) {
@@ -116,6 +126,7 @@ export class Engine {
     this.scheduled = true;
   }
 
+  /** Re-triggers notes already in progress at `at` seconds, so resuming mid-score still hears held notes. */
   private sustainFrom(at: number): void {
     const { score, voices } = this;
     if (!score || !voices) return;
@@ -124,6 +135,7 @@ export class Engine {
     for (const n of score.notes) {
       const start = n.time * spb;
       const end = (n.time + n.duration) * spb;
+      // Notes with 0.3s or less left are not worth retriggering: too short to hear as a held note.
       if (start < at && end - at > 0.3) {
         voices[n.track][laneFor(n.pan ?? 0)]!.triggerAttackRelease(toFreq(n.midi), end - at, Tone.now() + 0.05, n.velocity);
       }
@@ -137,6 +149,7 @@ export class Engine {
 
   async play(): Promise<void> {
     if (!this.score) return;
+    // Browsers start suspended: the context may only resume inside a user gesture, so this must stay on the click path.
     await Tone.start();
     await this.build();
     if (!this.scheduled) this.schedule();
